@@ -1,33 +1,48 @@
 /**============================================
- * UNIVERSAL FRAME GRABBER v10.0 (The "Everywhere" Edition)
- * Works on: YouTube, Reddit, X, Instagram, Facebook, Adult Sites, etc.
+ * VIDEO SCREENSHOT EXTENSION v15.0 (Deep Climber)
+ * Fixes Swiper/Slider sites like xFree, TikTok, etc.
  *=============================================**/
 
-// 1. Universal Style (Hidden by default, appears on hover)
-const buttonStyle = `
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    z-index: 2147483647; /* Maximum possible Z-Index to beat YouTube layers */
-    
-    /* Layout */
-    display: grid;
-    place-items: center; 
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    
-    /* Glassmorphism */
-    background-color: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    
-    /* Interaction */
-    opacity: 0; /* Hidden by default */
-    cursor: pointer;
-    transition: opacity 0.3s ease, transform 0.2s ease, background-color 0.2s;
-    pointer-events: auto;
-`;
+// 1. Dynamic Style Generator
+function getButtonStyle() {
+    const url = window.location.href;
+    const hostname = window.location.hostname;
+
+    // Base Style
+    let css = `
+        position: absolute;
+        z-index: 2147483647; 
+        display: grid;
+        place-items: center; 
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        opacity: 0; 
+        cursor: pointer;
+        transition: all 0.2s ease;
+        pointer-events: auto;
+    `;
+
+    // --- POSITIONING TWEAKS ---
+    if (hostname.includes('facebook.com') || url.includes('youtube.com/shorts/')) {
+        css += `top: 85px; right: 16px;`;
+    } 
+    else if (hostname.includes('instagram.com')) {
+        css += `top: 55px; right: 8px;`;
+    }
+    else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+        css += `top: 15px; right: 15px;`;
+    }
+    else {
+        // Standard safe spot for most sites
+        css += `top: 20px; right: 20px;`;
+    }
+
+    return css;
+}
 
 // 2. Icons
 const CAMERA_ICON = `
@@ -43,137 +58,143 @@ const SUCCESS_ICON = `
 
 // 3. Capture Engine
 function captureFrame(video) {
-  if (video.videoWidth === 0 || video.videoHeight === 0) return false;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return false;
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  try {
-    // Prepare canvas
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Download
-    canvas.toBlob((blob) => {
-      if (!blob) throw new Error("Canvas is empty (Likely DRM/CORS blocked)");
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const timestamp = new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace(/[:T]/g, "-");
-      // Clean host name for filename (e.g. "youtube_frame_...")
-      const site = window.location.hostname.replace("www.", "").split(".")[0];
-      link.download = `${site}_frame_${timestamp}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, "image/png");
-    return true;
-  } catch (err) {
-    console.error("Capture Failed:", err);
-    // Fallback alert for sites like Netflix that block screenshots
-    alert(
-      "Cannot capture this video. It might be DRM protected or strictly CORS blocked."
-    );
-    return false;
-  }
+        canvas.toBlob((blob) => {
+            if (!blob) return;
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const site = window.location.hostname.replace('www.', '').split('.')[0];
+            link.download = `${site}_screenshot_${timestamp}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }, 'image/png');
+        return true;
+    } catch (err) {
+        console.error("Capture Failed:", err);
+        return false;
+    }
 }
 
 // 4. Injector
 function addDownloadButton(video) {
-  // A. Find the best container (Crucial for YouTube/Reddit)
-  // We try to attach to the video's parent, but on some sites (YouTube)
-  // we need to go up a few levels to find the main "player" container
-  let container = video.parentElement;
+    let container = video.parentElement;
+    
+    // --- SMART CONTAINER FINDER (The "Deep Climber") ---
+    // We attempt to find the "Main Card" or "Slide" wrapper.
+    // This fixes xFree, xxxfollow, TikTok, etc. where the video is deep inside a Swiper slide.
 
-  // YouTube Specific Fix: Attach to the movie-player container if possible
-  if (window.location.hostname.includes("youtube.com")) {
-    const ytPlayer =
-      video.closest("#movie_player") || video.closest(".html5-video-player");
-    if (ytPlayer) container = ytPlayer;
-  }
+    let bestContainer = null;
+    let currentEl = video.parentElement;
 
-  // B. Check if we already injected
-  if (container.querySelector(".univ-frame-btn")) return;
-
-  // C. Create Button
-  const btn = document.createElement("button");
-  btn.className = "univ-frame-btn";
-  btn.innerHTML = CAMERA_ICON;
-  btn.style.cssText = buttonStyle;
-  btn.title = "Extract Frame";
-
-  // D. Hover Logic (The "Ghost" Interaction)
-  // Show button when mouse enters the VIDEO CONTAINER
-  container.addEventListener("mouseenter", () => {
-    btn.style.opacity = "1";
-  });
-  // Hide button when mouse leaves the VIDEO CONTAINER
-  container.addEventListener("mouseleave", () => {
-    btn.style.opacity = "0";
-  });
-  // Also keep button visible if hovering over the button itself
-  btn.onmouseenter = () => {
-    btn.style.opacity = "1";
-    btn.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
-    btn.style.transform = "scale(1.1)";
-  };
-  btn.onmouseleave = () => {
-    btn.style.backgroundColor = "rgba(0, 0, 0, 0.4)";
-    btn.style.transform = "scale(1)";
-  };
-
-  // E. Click Logic
-  btn.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation(); // Stop YouTube from pausing on click
-
-    btn.style.transform = "scale(0.9)";
-    setTimeout(() => (btn.style.transform = "scale(1.1)"), 150);
-
-    const success = captureFrame(video);
-    if (success) {
-      btn.innerHTML = SUCCESS_ICON;
-      setTimeout(() => (btn.innerHTML = CAMERA_ICON), 1500);
+    // 1. YouTube Check (Always specific)
+    if (window.location.hostname.includes('youtube.com')) {
+        bestContainer = video.closest('#movie_player') || video.closest('.html5-video-player');
+    } 
+    // 2. Generic "Deep Search" for Swipers/Slides
+    else {
+        // Climb up 7 levels max to find a "Slide" or "Item" container
+        for (let i = 0; i < 7; i++) {
+            if (!currentEl) break;
+            
+            const classes = (currentEl.className || "").toString().toLowerCase();
+            
+            // Keywords that indicate this is the main wrapper we want
+            if (classes.includes('swiper-slide') || 
+                classes.includes('item') || 
+                classes.includes('card') || 
+                classes.includes('video-wrapper') ||
+                classes.includes('active')) {
+                bestContainer = currentEl;
+                // Don't break immediately, sometimes the "active" slide is 1 level higher. 
+                // But usually the first one we hit is good.
+                break; 
+            }
+            currentEl = currentEl.parentElement;
+        }
     }
-  };
 
-  // F. CSS Fixes for Container
-  if (getComputedStyle(container).position === "static") {
-    container.style.position = "relative";
-  }
+    // Fallback: If no fancy container found, use the direct parent or grandparent
+    if (!bestContainer) {
+        bestContainer = video.parentElement?.parentElement || video.parentElement;
+    }
+    
+    container = bestContainer; // Assign our winner
 
-  container.appendChild(btn);
+    if (!container || container.querySelector('.univ-frame-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'univ-frame-btn';
+    btn.innerHTML = CAMERA_ICON;
+    btn.style.cssText = getButtonStyle();
+    btn.title = "Screenshot";
+
+    // --- HOVER LOGIC ---
+    // We attach listeners to the CONTAINER found above.
+    // This means hovering ANYWHERE on the slide/card will trigger the button.
+    
+    container.addEventListener('mouseenter', () => btn.style.opacity = '1');
+    container.addEventListener('mouseleave', () => btn.style.opacity = '0');
+    
+    // Also attach to the button itself so it doesn't flicker
+    btn.onmouseenter = () => {
+        btn.style.opacity = '1';
+        btn.style.transform = 'scale(1.1)';
+    };
+    btn.onmouseleave = () => {
+        btn.style.transform = 'scale(1)';
+    };
+
+    // Click Handler
+    btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation(); 
+        
+        btn.style.transform = 'scale(0.9)';
+        setTimeout(() => btn.style.transform = 'scale(1.1)', 150);
+
+        if (captureFrame(video)) {
+            btn.innerHTML = SUCCESS_ICON;
+            setTimeout(() => btn.innerHTML = CAMERA_ICON, 1500);
+        }
+    };
+
+    if (getComputedStyle(container).position === 'static') {
+        container.style.position = 'relative';
+    }
+
+    container.appendChild(btn);
 }
 
-// 5. Universal Watcher
+// 5. Watcher
 function initObserver() {
-  // Initial Scan
-  document.querySelectorAll("video").forEach(addDownloadButton);
+    document.querySelectorAll('video').forEach(addDownloadButton);
 
-  // Continuous Scan
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.addedNodes.length) {
-        mutation.addedNodes.forEach((node) => {
-          // Check direct video nodes
-          if (node.nodeType === 1 && node.tagName === "VIDEO") {
-            addDownloadButton(node);
-          }
-          // Check nested video nodes (Reddit/Twitter often nest them deep)
-          else if (node.nodeType === 1 && node.querySelectorAll) {
-            node.querySelectorAll("video").forEach(addDownloadButton);
-          }
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.addedNodes.length) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === 1 && node.tagName === 'VIDEO') {
+                        addDownloadButton(node);
+                    } else if (node.nodeType === 1 && node.querySelectorAll) {
+                        node.querySelectorAll('video').forEach(addDownloadButton);
+                    }
+                });
+            }
         });
-      }
     });
-  });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true });
 }
 
 initObserver();
